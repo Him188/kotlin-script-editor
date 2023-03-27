@@ -8,6 +8,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.runningReduce
@@ -25,17 +27,23 @@ fun App() {
     val scriptRunner = remember {
         SingleInstanceScriptRunner(KotlinScriptRunner.create(Paths.get(System.getProperty("user.dir")), backgroundScope.coroutineContext))
     }
+    val highlighter = remember { KotlinHighlighter(SpanStyle(color = Color.Blue)) }
     val currentScriptSession by scriptRunner.currentSession.collectAsState()
     val executionState by currentScriptSession?.state?.collectAsState() ?: nullState()
 
-    var source by remember { mutableStateOf("") }
+    var source by remember { mutableStateOf(TextFieldValue("")) }
 
     Row(Modifier.fillMaxSize().padding(16.dp)) {
         // Source area
         TextField(
             source,
             onValueChange = {
-                source = it
+                source = if (it.text != source.text) {
+                    // text changed, re-highlight
+                    it.copy(highlighter.highlight(it.text))
+                } else {
+                    it
+                }
             },
             placeholder = { Text("Enter source here") },
             modifier = Modifier.fillMaxHeight().padding(12.dp),
@@ -48,7 +56,7 @@ fun App() {
             Button(
                 onClick = {
                     if (!executionState.isRunningOrInitialized()) {
-                        scriptRunner.startSession(Script(source))
+                        scriptRunner.startSession(Script(source.text))
                     }
                 },
                 modifier = Modifier.padding(12.dp).height(40.dp).width(80.dp),
