@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.*
 import java.nio.file.Path
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.absolutePathString
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 import kotlin.random.Random
 import kotlin.random.nextUInt
@@ -22,8 +23,10 @@ class KotlinScriptRunner private constructor(
 
             startProcess(
                 ProcessBuilder()
-                    .command(KOTLINC_PATH, "--script", temp.absolutePathString())
-            )
+                    .command(KOTLINC_PATH, "-script", temp.absolutePathString())
+            )?.invokeOnCompletion {
+                temp.deleteIfExists()
+            }
         }
     }
 
@@ -52,7 +55,9 @@ private class KotlinExecutionSession(
     override val state: StateFlow<ExecutionState> get() = _state
 
 
-    fun startProcess(processBuilder: ProcessBuilder) {
+    fun startProcess(processBuilder: ProcessBuilder): Job? {
+        log { "Starting process: ${processBuilder.command()}" }
+
         check(state.value == ExecutionState.Initialized)
         _state.value = ExecutionState.Running
 
@@ -61,15 +66,32 @@ private class KotlinExecutionSession(
         } catch (e: Exception) {
             // like IOException
             _state.value = ExecutionState.Failed(e)
-            return
+            log { "Failed to start process: $e" }
+            return null
         }
 
-        val processScope = CoroutineScope(scope.coroutineContext)
+        val processScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext.job))
 
         processScope.launch(Dispatchers.IO) {
             // read inputs
             try {
-                process.inputStream.bufferedReader().lineSequence().forEach { line ->
+                process.inputReader().lineSequence().forEach { line ->
+                    log { "Emitting output: $line" }
+                    _outputs.emit(line)
+                }
+            } catch (_: CancellationException) {
+                // ignored
+            } catch (e: Throwable) {
+                _state.value = ExecutionState.Failed(e)
+                processScope.cancel()
+            }
+        }
+        
+        processScope.launch(Dispatchers.IO) {
+            // read inputs
+            try {
+                process.errorReader().lineSequence().forEach { line ->
+                    log { "Emitting output: $line" }
                     _outputs.emit(line)
                 }
             } catch (_: CancellationException) {
@@ -80,14 +102,17 @@ private class KotlinExecutionSession(
             }
         }
 
-        processScope.launch {
+        return processScope.launch {
             // wait for the process to exit
             val exitCode = runInterruptible(Dispatchers.IO) { process.waitFor() }
+            log { "Process exit: $exitCode" }
             _state.value = ExecutionState.Completed(exitCode)
         }.apply {
             invokeOnCompletion {
                 processScope.cancel()
             }
+        }.also {
+            log { "Process started" }
         }
     }
 
@@ -95,3 +120,5 @@ private class KotlinExecutionSession(
         scope.cancel()
     }
 }
+
+private inline fun log(message: () -> String) = println(message())
