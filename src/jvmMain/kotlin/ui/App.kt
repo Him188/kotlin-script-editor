@@ -11,7 +11,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.runningReduce
-import script.*
+import script.ExecutionState
+import script.KotlinScriptRunner
+import script.Script
+import script.SingleInstanceScriptRunner
 import java.nio.file.Paths
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -58,39 +61,51 @@ fun App() {
             }
         }
 
-        val outputState = currentScriptSession?.outputs
-            ?.runningReduce { accumulator, value -> accumulator + "" + value }
-            ?.collectAsState("")
-
-        // Outputs
+        // Output area
         Box(Modifier.fillMaxSize()) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                when (val state = executionState) {
-                    is ExecutionState.Failed -> {
-                        Text(
-                            "Execution failed: \n" + state.exception?.message.orEmpty(),
-                            modifier = Modifier.fillMaxHeight().padding(12.dp),
-                        )
-                    }
-
-                    else -> {
-                        if (state is ExecutionState.Completed && !state.isSuccess) {
-                            Text("Exit code: ${state.exitCode}")
-                        } else {
-                            Text("Click 'Run!' to execute the script and see live output here")
+                // tip
+                Box(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp).height(36.dp)) {
+                    when (val state = executionState) {
+                        null -> {
+                            Text("Click 'Run!' to execute the script and see live output.")
                         }
 
-                        OutlinedTextField(
-                            outputState?.value ?: "",
-                            onValueChange = {},
-                            readOnly = true,
-                            modifier = Modifier.fillMaxHeight().padding(12.dp),
-                            colors = TextFieldDefaults.outlinedTextFieldColors(
-                                focusedBorderColor = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.disabled),
+                        is ExecutionState.Failed -> {
+                            Text(
+                                "Execution failed: \n" + state.exception?.message.orEmpty(),
+                                modifier = Modifier.fillMaxHeight().padding(12.dp),
                             )
-                        )
+                        }
+
+                        is ExecutionState.Completed -> {
+                            Text("Exit code: ${state.exitCode}")
+                        }
+
+                        is ExecutionState.Running,
+                        ExecutionState.Initialized,
+                        -> Text("Running script...")
                     }
                 }
+
+                // output messages
+                val textContent = key(currentScriptSession) { // clear text field when currentScriptSession changed
+                    val outputState = remember {
+                        currentScriptSession?.outputs
+                            ?.runningReduce { accumulator, value -> accumulator + "\n" + value }
+                    }?.collectAsState("")
+
+                    outputState?.value ?: ""
+                }
+                OutlinedTextField(
+                    textContent,
+                    onValueChange = {},
+                    readOnly = true,
+                    modifier = Modifier.fillMaxHeight().padding(12.dp),
+                    colors = TextFieldDefaults.outlinedTextFieldColors(
+                        focusedBorderColor = MaterialTheme.colors.onSurface.copy(alpha = ContentAlpha.disabled),
+                    )
+                )
             }
         }
     }
@@ -98,6 +113,7 @@ fun App() {
 
 private fun ExecutionState?.isRunningOrInitialized() = this is ExecutionState.Initialized || this is ExecutionState.Running
 
+@Stable
 private fun nullState() = mutableStateOf(null)
 
 @Composable

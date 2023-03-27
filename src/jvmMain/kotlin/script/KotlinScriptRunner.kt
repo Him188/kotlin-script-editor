@@ -46,7 +46,7 @@ class KotlinScriptRunner private constructor(
 private class KotlinExecutionSession(
     parentCoroutineContext: CoroutineContext,
 ) : ExecutionSession {
-    private val scope = CoroutineScope(parentCoroutineContext)
+    private val scope = CoroutineScope(parentCoroutineContext + Job(parentCoroutineContext.job))
 
     private val _outputs: MutableSharedFlow<String> = MutableSharedFlow()
     override val outputs: SharedFlow<String> = _outputs.asSharedFlow() // readonly
@@ -70,9 +70,7 @@ private class KotlinExecutionSession(
             return null
         }
 
-        val processScope = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext.job))
-
-        processScope.launch(Dispatchers.IO) {
+        scope.launch(Dispatchers.IO) {
             // read inputs
             try {
                 process.inputReader().lineSequence().forEach { line ->
@@ -83,11 +81,11 @@ private class KotlinExecutionSession(
                 // ignored
             } catch (e: Throwable) {
                 _state.value = ExecutionState.Failed(e)
-                processScope.cancel()
+                scope.cancel()
             }
         }
-        
-        processScope.launch(Dispatchers.IO) {
+
+        scope.launch(Dispatchers.IO) {
             // read inputs
             try {
                 process.errorReader().lineSequence().forEach { line ->
@@ -98,18 +96,19 @@ private class KotlinExecutionSession(
                 // ignored
             } catch (e: Throwable) {
                 _state.value = ExecutionState.Failed(e)
-                processScope.cancel()
+                scope.cancel()
             }
         }
 
-        return processScope.launch {
+        return scope.launch {
             // wait for the process to exit
             val exitCode = runInterruptible(Dispatchers.IO) { process.waitFor() }
             log { "Process exit: $exitCode" }
             _state.value = ExecutionState.Completed(exitCode)
         }.apply {
             invokeOnCompletion {
-                processScope.cancel()
+                log { "Process job completed, exception: $it" }
+                scope.cancel()
             }
         }.also {
             log { "Process started" }

@@ -1,5 +1,6 @@
 package script
 
+import androidx.compose.runtime.Stable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +19,8 @@ class SingleInstanceScriptRunner(
     private val delegate: ScriptRunner,
 ) : ScriptRunner {
     private var _currentSession: MutableStateFlow<ExecutionSession?> = MutableStateFlow(null)
+
+    @Stable
     val currentSession: StateFlow<ExecutionSession?> = _currentSession.asStateFlow() // readonly
 
     override fun startSession(script: Script): ExecutionSession {
@@ -35,7 +38,10 @@ data class Script(
 
 
 interface ExecutionSession {
+    @Stable
     val outputs: SharedFlow<String>
+
+    @Stable
     val state: StateFlow<ExecutionState>
 
     fun cancel()
