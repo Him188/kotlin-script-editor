@@ -46,7 +46,7 @@ fun App() {
                 }
             },
             placeholder = { Text("Enter source here") },
-            modifier = Modifier.fillMaxHeight().padding(12.dp),
+            modifier = Modifier.fillMaxHeight().padding(12.dp).weight(0.6f),
             enabled = true,
             readOnly = false,
         )
@@ -70,7 +70,7 @@ fun App() {
         }
 
         // Output area
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().weight(0.3f)) {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // tip
                 Box(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp).height(36.dp)) {
