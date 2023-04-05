@@ -2,6 +2,7 @@ package script
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import java.io.BufferedReader
 import java.nio.file.Path
 import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.absolutePathString
@@ -71,33 +72,11 @@ private class KotlinExecutionSession(
         }
 
         scope.launch(Dispatchers.IO) {
-            // read inputs
-            try {
-                process.inputReader().lineSequence().forEach { line ->
-                    log { "Emitting output: $line" }
-                    _outputs.emit(line)
-                }
-            } catch (_: CancellationException) {
-                // ignored
-            } catch (e: Throwable) {
-                _state.value = ExecutionState.Failed(e)
-                scope.cancel()
-            }
+            listenOutput(process.inputReader())
         }
 
         scope.launch(Dispatchers.IO) {
-            // read inputs
-            try {
-                process.errorReader().lineSequence().forEach { line ->
-                    log { "Emitting output: $line" }
-                    _outputs.emit(line)
-                }
-            } catch (_: CancellationException) {
-                // ignored
-            } catch (e: Throwable) {
-                _state.value = ExecutionState.Failed(e)
-                scope.cancel()
-            }
+            listenOutput(process.errorReader())
         }
 
         return scope.launch {
@@ -112,6 +91,20 @@ private class KotlinExecutionSession(
             }
         }.also {
             log { "Process started" }
+        }
+    }
+
+    private suspend fun listenOutput(reader: BufferedReader) {
+        try {
+            reader.lineSequence().forEach { line ->
+                log { "Emitting output: $line" }
+                _outputs.emit(line)
+            }
+        } catch (_: CancellationException) {
+            // ignored
+        } catch (e: Throwable) {
+            _state.value = ExecutionState.Failed(e)
+            scope.cancel()
         }
     }
 
